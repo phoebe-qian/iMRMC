@@ -30,6 +30,7 @@ import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.io.File;
 import java.io.IOException;
+import java.util.TreeMap;
 
 import javax.swing.GroupLayout;
 import javax.swing.JButton;
@@ -52,6 +53,7 @@ import mrmc.chart.StudyDesignPlot;
 
 import mrmc.core.DBRecord;
 import mrmc.core.InputFile;
+import mrmc.core.StatTest;
 
 import org.jfree.ui.RefineryUtilities;
 
@@ -71,7 +73,6 @@ public class InputFileCard {
 	private InputFile InputFile1;
 	private DBRecord DBRecordStat;
 	private DBRecord DBRecordSize;
-
 	JTextField JTextFilename;
 	public final static int USE_MLE = 1;
 	public final static int NO_MLE = 0;
@@ -88,7 +89,7 @@ public class InputFileCard {
 		
 		JTextFilename.setText("");
 		FlagMLE = NO_MLE;
-
+		mleCheckBox.setSelected(false);
 		chooseA.removeAllItems();
 		chooseB.removeAllItems();
 		chooseA.addItem("Choose Modality A");
@@ -114,7 +115,7 @@ public class InputFileCard {
 		 * Elements of RawStudyCardRow1
 		 */
 		// Browse for input file
-		JLabel studyLabel = new JLabel(".imrmc file  ");
+		JLabel studyLabel = new JLabel(".imrmc or .csv file  ");
 		JTextFilename = new JTextField(20);
 		JButton browseButton = new JButton("Browse...");
 		browseButton.addActionListener(new brwsButtonListener());
@@ -207,14 +208,23 @@ public class InputFileCard {
 		public void actionPerformed(ActionEvent e) {
 			
 			GUI.resetGUI();
-			
+			if  (GUInterface.selectedInput == GUInterface.DescInputChooseMode){
+				JOptionPane.showMessageDialog(GUI.MRMCobject.getFrame(),
+						"Please choose one kind of input file.", "Error",
+						JOptionPane.ERROR_MESSAGE);
+				return;
+			}
 			JFileChooser fc = new JFileChooser();
 			FileNameExtensionFilter filter = new FileNameExtensionFilter(
-					"iMRMC Input Files (.imrmc)", "imrmc");
+					"iMRMC Input Files (.imrmc or csv)", "csv","imrmc");
+		
+			if (GUI.inputfileDirectory!=null)
+				fc.setCurrentDirectory(GUI.inputfileDirectory);
+			
 			fc.setFileFilter(filter);
 			int returnVal = fc.showOpenDialog((Component) e.getSource());
 			if( returnVal==JFileChooser.CANCEL_OPTION || returnVal==JFileChooser.ERROR_OPTION) return;
-			
+			GUI.inputfileDirectory = fc.getCurrentDirectory(); //save last time visit directory
 			/*
 			 *  Get a pointer to the input file and the filename
 			 */
@@ -222,12 +232,12 @@ public class InputFileCard {
 			if( f==null ) return;
 			InputFile1.filename = f.getPath();
 			JTextFilename.setText(f.getPath());
-
+//			GUI.inputfileDirectory = f.getPath();
 			/*
 			 *  Read the .imrmc input file, check for exceptions
 			 */				
 			try {
-				InputFile1.ReadInputFile();
+				InputFile1.ReadInputFile(GUI);
 			} catch (IOException except) {
 				except.printStackTrace();
 				JOptionPane.showMessageDialog
@@ -322,10 +332,10 @@ public class InputFileCard {
 						"Choose Modality", JOptionPane.INFORMATION_MESSAGE,
 						null);
 				designMod1 = (String) choose1.getSelectedItem();
-				String[][] design = InputFile1.getStudyDesign( (String) choose1.getSelectedItem());
+				TreeMap<String,String[][]> StudyDesignData = InputFile1.getStudyDesign( (String) choose1.getSelectedItem());
 				final StudyDesignPlot chart = new StudyDesignPlot(
-						"Study Design: Modality " + designMod1, "Case",
-						"Reader", design);
+						"Study Design: Modality "+designMod1, designMod1, "Case Index",
+						"Reader", StudyDesignData,InputFile1.filename);
 				chart.pack();
 				RefineryUtilities.centerFrameOnScreen(chart);
 				chart.setVisible(true);
@@ -410,7 +420,8 @@ public class InputFileCard {
 			} else {
 				FlagMLE = NO_MLE;
 			}
-
+			DBRecordStat.flagMLE = FlagMLE;
+			DBRecordSize.flagMLE = FlagMLE;
 			GUI.StatPanel1.resetStatPanel();
 			GUI.StatPanel1.resetTable1();
 			GUI.SizePanel1.resetSizePanel();
@@ -478,7 +489,6 @@ public class InputFileCard {
 	class varAnalysisListener implements ActionListener {
 		public void actionPerformed(ActionEvent e) {
 			System.out.println("MRMC Variance analysis button clicked. RawStudyCard.varAnalysisListener");
-			
 			// Check that .imrmc input file has been read
 			// If there is no JTextFilename, then reader scores have not been read
 			String name = JTextFilename.getText();
@@ -486,7 +496,7 @@ public class InputFileCard {
 			if (name.equals(null) || name.equals("")) {
 				JFrame frame = GUI.MRMCobject.getFrame();
 				JOptionPane.showMessageDialog(frame, 
-						"Please browse for .imrmc input file", " Error",
+						"Please browse for .imrmc or.csv input file", " Error",
 						JOptionPane.ERROR_MESSAGE);
 				return;
 			}
@@ -508,10 +518,8 @@ public class InputFileCard {
 							JOptionPane.ERROR_MESSAGE);
 				return;
 			}
-			
 			// Analyze observerData
 			DBRecordStat.DBRecordStatFill(InputFile1, DBRecordStat);
-			
 			// Check if variance estimate is negative
 			if(DBRecordStat.totalVar > 0)
 				GUI.hasNegative = false;
@@ -528,12 +536,15 @@ public class InputFileCard {
 					System.out.println("cancel");
 				} else if (JOptionPane.YES_OPTION == result) {
 					FlagMLE = USE_MLE;
+					DBRecordStat.flagMLE = FlagMLE;
+					mleCheckBox.setSelected(true);
+					DBRecordStat.totalVar=DBRecordStat.totalVarMLE;
+					DBRecordStat.testStat = new StatTest(DBRecordStat);
 				} else if (JOptionPane.NO_OPTION == result) {
 					FlagMLE = NO_MLE;
 				}
 
 			}
-
 			// Update GUI
 			DBRecordStat.flagMLE = FlagMLE;
 			DBRecordSize.flagMLE = FlagMLE;
